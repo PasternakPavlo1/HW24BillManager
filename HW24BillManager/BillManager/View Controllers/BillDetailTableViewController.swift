@@ -1,20 +1,18 @@
-//
-//  BillDetailTableViewController.swift
-//  BillManager
-//
-
 import UIKit
 
+// MARK: - Classes
 class BillDetailTableViewController: UITableViewController, UITextFieldDelegate {
+    //MARK: - Private constants
     private let datePickerHeight = CGFloat(216)
     private let dueDateCellIndexPath = IndexPath(row: 2, section: 0)
     private let remindDateCellIndexPath = IndexPath(row:0, section: 1)
     
+    // MARK: - Outlets
     @IBOutlet var payeeTextField: UITextField!
     @IBOutlet var amountTextField: UITextField!
     @IBOutlet var dueDateLabel: UILabel!
     @IBOutlet var dueDatePicker: UIDatePicker!
-   
+    
     @IBOutlet var remindStatusLabel: UILabel!
     @IBOutlet var remindSwitch: UISwitch!
     @IBOutlet var remindDatePicker: UIDatePicker!
@@ -23,6 +21,7 @@ class BillDetailTableViewController: UITableViewController, UITextFieldDelegate 
     @IBOutlet var paidSwitch: UISwitch!
     @IBOutlet var paidDateLabel: UILabel!
     
+    // MARK: - Properties
     var isDueDatePickerShown: Bool = false {
         didSet {
             dueDatePicker.isHidden = !isDueDatePickerShown
@@ -37,6 +36,7 @@ class BillDetailTableViewController: UITableViewController, UITextFieldDelegate 
     var bill: Bill?
     var paidDate: Date?
     
+    // MARK: - Life Cycle
     override func viewDidLoad() {
         super.viewDidLoad()
         let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
@@ -71,10 +71,16 @@ class BillDetailTableViewController: UITableViewController, UITextFieldDelegate 
         }
     }
     
+    // MARK: - Objective Methods
     @objc func dismissKeyboard() {
         view.endEditing(true)
     }
     
+    @objc func cancelButtonTapped() {
+        dismiss(animated: true, completion: nil)
+    }
+    
+    // MARK: - Methods
     func updateDueDateUI() {
         dueDateLabel.text = dueDatePicker.date.formatted(date: .numeric, time: .omitted)
         remindDatePicker.maximumDate = dueDatePicker.date
@@ -98,29 +104,51 @@ class BillDetailTableViewController: UITableViewController, UITextFieldDelegate 
         }
     }
     
-    @IBAction func remindSwitchChanged(_ sender: UISwitch) {
-
-        if sender.isOn {
-            isDueDatePickerShown = false
-            isRemindDatePickerShown = true
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        if textField == amountTextField {
+            let text = (textField.text ?? "") as NSString
+            let newText = text.replacingCharacters(in: range, with: string)
+            if let _ = Double(newText) {
+                return true
+            }
+            return newText.isEmpty
         } else {
-            isRemindDatePickerShown = false
+            return true
         }
+    }
+    
+    func presentNeedAuthorizationAlert() {
+        let alert = UIAlertController(title: "Authorization Needed", message: "We can't set reminders for you without notification permissions. Please go to the iOS Settings app and grant us notification permissions if you wish to make use of reminders.", preferredStyle: .alert)
         
-        tableView.beginUpdates()
-        tableView.endUpdates()
-        updateRemindUI()
+        let okAction = UIAlertAction(title: "Okay", style: .default, handler: nil)
+        
+        alert.addAction(okAction)
+        
+        present(alert, animated: true, completion: nil)
     }
     
-    @IBAction func paymentSwitchChanged(_ sender: UISwitch) {
-        if sender.isOn {
-            paidDate = Date()
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        var bill = self.bill ?? Database.shared.addBill()
+        
+        bill.payee = payeeTextField.text
+        bill.amount = Double(amountTextField.text ?? "0") ?? 0.00
+        bill.dueDate = dueDatePicker.date
+        bill.paidDate = paidDate
+        
+        if remindSwitch.isOn {
+            bill.schedulingReminders(date: remindDatePicker.date) { (updatedBill) in
+                if updatedBill.notificationID == nil {
+                    self.presentNeedAuthorizationAlert()
+                }
+                Database.shared.updateAndSave(updatedBill)
+            }
         } else {
-            paidDate = nil
+            bill.removingReminders()
+            Database.shared.updateAndSave(bill)
         }
-        updatePaymentUI()
     }
     
+    // MARK: - TableView Methods
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         
@@ -177,7 +205,31 @@ class BillDetailTableViewController: UITableViewController, UITextFieldDelegate 
             return 44
         }
     }
+    
+    // MARK: - Actions
+    @IBAction func remindSwitchChanged(_ sender: UISwitch) {
         
+        if sender.isOn {
+            isDueDatePickerShown = false
+            isRemindDatePickerShown = true
+        } else {
+            isRemindDatePickerShown = false
+        }
+        
+        tableView.beginUpdates()
+        tableView.endUpdates()
+        updateRemindUI()
+    }
+    
+    @IBAction func paymentSwitchChanged(_ sender: UISwitch) {
+        if sender.isOn {
+            paidDate = Date()
+        } else {
+            paidDate = nil
+        }
+        updatePaymentUI()
+    }
+    
     @IBAction func dueDatePickerValueChanged(_ sender: UIDatePicker) {
         updateDueDateUI()
     }
@@ -185,40 +237,5 @@ class BillDetailTableViewController: UITableViewController, UITextFieldDelegate 
     @IBAction func remindDatePickerValueChanged(_ sender: UIDatePicker) {
         updateRemindUI()
     }
-    
-    
-    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-        if textField == amountTextField {
-            let text = (textField.text ?? "") as NSString
-            let newText = text.replacingCharacters(in: range, with: string)
-            if let _ = Double(newText) {
-                return true
-            }
-            return newText.isEmpty
-        } else {
-            return true
-        }
-    }
-
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        var bill = self.bill ?? Database.shared.addBill()
-        
-        bill.payee = payeeTextField.text
-        bill.amount = Double(amountTextField.text ?? "0") ?? 0.00
-        bill.dueDate = dueDatePicker.date
-        bill.paidDate = paidDate
-        
-        if remindSwitch.isOn {
-            bill.remindDate = remindDatePicker.date
-        } else {
-            bill.remindDate = nil
-        }
-        
-        Database.shared.updateAndSave(bill)
-    }
-    
-    @objc func cancelButtonTapped() {
-        dismiss(animated: true, completion: nil)
-    }
-
 }
+
